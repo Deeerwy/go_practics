@@ -1,4 +1,4 @@
-# HTTP Server
+# Практическая работа 1 Бурылин Дмитрий Сергеевич HTTP Server
 
 Простой HTTP-сервер на Go с REST API endpoints.
 
