@@ -21,7 +21,7 @@
    ```
 
 ## Структура проекта
-
+```
 pz3-http/
 ├─ cmd/server/main.go        
 ├─ internal/api/handlers.go  
@@ -29,6 +29,7 @@ pz3-http/
 ├─ internal/api/responses.go 
 ├─ internal/storage/memory.go
 └─ go.mod
+```
 
 ## Тестовые запросы для ПЗ №3
 
