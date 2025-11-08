@@ -27,17 +27,21 @@ GORM значительно упрощает разработку:
    ```
 ##  Установление переменной и запуск проекта
 ```
-curl http://localhost:8080/health
+go run ./cmd/server
 ```
 ![screen1](image.png)
 
 ## Пример выполнения запросов curl/postman
 ```
+curl http://localhost:8080/health
+```
+![screeeeen](image-5.png)
+```
 curl -X POST http://localhost:8080/users 
 -H "Content-Type: application/json" 
 -d '{"name":"Alice","email":"alice@example.com"}'
 ```
-![screen2](image-1.png)
+![screeeen2](image-6.png)
 ```
 curl -X POST http://localhost:8080/notes \
 -H "Content-Type: application/json" \
