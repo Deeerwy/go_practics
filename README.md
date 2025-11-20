@@ -29,7 +29,9 @@
 ![screen1](image.png)
 
 # Запуск сервера
+```
 go run ./cmd/server
+```
 ![screen2](image-1.png)
 
 # Тестирование
