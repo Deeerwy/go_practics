@@ -45,7 +45,6 @@ pz9-auth/
 export DB_DSN="postgres://user:pass@localhost:5432/pz9?sslmode=disable"
 export BCRYPT_COST=12
 export APP_ADDR=":8080"
-![sc2](image-1.png)
 
 
 - **Инициализация зависимостей:**
@@ -56,7 +55,7 @@ go get github.com/go-chi/chi/v5
 go get gorm.io/gorm gorm.io/driver/postgres
 go get golang.org/x/crypto/bcrypt
 ```
-
+![sc2](image-1.png)
 
 ## Команда запуска
 
@@ -82,8 +81,8 @@ func (r *UserRepo) AutoMigrate() error {
 psql "$DB_DSN"
 # Внутри psql:
 \d users
-![sc1](image.png)
 ```
+![sc1](image.png)
 
 ---
 
@@ -256,31 +255,35 @@ func (r *UserRepo) ByEmail(ctx context.Context, email string) (core.User, error)
 
 ## Тестирование через curl/Postman
 
-```bash
+```
 # Регистрация 
 curl -i -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"Secret123!"}'
+  ```
 ![sc3](image-2.png)
-
+```
 # Повторная регистрация 
 curl -i -X POST http://localhost:8080/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"AnotherPass"}'
+  ```
   ![sc4](image-3.png)
-
+```
 # Вход с верными данными 
 curl -i -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"Secret123!"}'
+  ```
   ![sc4](image-4.png)
-
+```
 # Вход с неверным паролем 
 curl -i -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"wrong"}'
+  ```
   ![sc5](image-5.png)
-```
+
 
 ---
 
