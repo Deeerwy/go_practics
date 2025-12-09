@@ -54,6 +54,7 @@ go install github.com/swaggo/swag/cmd/swag@latest
 ### Aрагмент аннотаций над 2 методами (ListNotes, CreateNote).
 
 ![screen_ann_1](image-3.png)
+![screen_ann_2](image-6.png)
 
 ### Запуск проекта
 ```
