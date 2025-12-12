@@ -1,176 +1,155 @@
-### Практика 11. Бурылин Дмитрий ПИМО-01-25. Проектирование REST API (CRUD для заметок). Разработка структуры
+### Практика 14. Бурылин Дмитрий ПИМО-01-25. Оптимизация запросов к БД. Использование connection pool
 
 
 ### Задача на практику:
 
-Освоить принципы проектирования REST API. Спроектировать и реализовать CRUD-интерфейс (Create, Read, Update, Delete) для сущности «Заметка». Подготовить основу для интеграции с базой данных и JWT-аутентификацией
+1.	Научиться находить «узкие места» в SQL-запросах и устранять их (индексы, переписывание запросов, пагинация, батчинг).
+2.	Освоить настройку пула подключений (connection pool) в Go и параметры его тюнинга.
+3.	Научиться использовать EXPLAIN/ANALYZE, базовые метрики (pg_stat_statements), подготовленные запросы и транзакции.
+4.	Применить техники уменьшения N+1 запросов и сокращения аллокаций на горячем пути.
+
 
 ### Структура проекта
 
 ```
-notes-api/
- ├─ cmd/api/main.go
- ├─ internal/
- │   ├─ http/
- │   │   ├─ router.go
- │   │   └─ handlers/notes.go
- │   ├─ core/
- │   │   ├─ note.go
- │   │   └─ service/note_service.go
- │   └─ repo/
- │       └─ note_mem.go
- ├─ api/openapi.yaml
- └─ go.mod
+go_practics/
+├── api/
+│   └── openapi.yaml
+├── cmd/
+│   └── api/
+│       └── main.go
+├── internal/
+│   ├── config/
+│   │   └── config.go
+│   ├── http/
+│   │   ├── handlers.go
+│   │   ├── respond.go
+│   │   └── servers.go
+│   ├── model/
+│   │   └── note.go
+│   ├── pagination/
+│   │   └── cursor.go
+│   └── storage/
+│       ├── postgres/
+│       │   ├── query.go
+│       │   └── repo.go
+│       └── redis/
+│           └── cache.go
+├── docker-compose.yml
+├── go.mod
+├── go.sum
+└── README.md
 ```
 
 
-
-### Подготовка проекта
-
-```
-mkdir notes-api
-cd notes-api
-go mod init example.com/notes-api
-go get github.com/go-chi/chi/v5
-```
-
-### Фрагменты кода из основных файлов 
-
-**internal/core/note.go**
-```
-package core
-
-
-import "time"
-
-
-type Note struct {
-  ID        int64
-  Title     string
-  Content   string
-  CreatedAt time.Time
-  UpdatedAt *time.Time
-}
-```
-
-**internal/repo/note_mem.go**
-```
-package repo
-import (
-  "sync"
-  "example.com/notes-api/internal/core"
-)
-type NoteRepoMem struct {
-  mu    sync.Mutex
-  notes map[int64]*core.Note
-  next  int64
-}
-
-
-func NewNoteRepoMem() *NoteRepoMem {
-  return &NoteRepoMem{notes: make(map[int64]*core.Note)}
-}
-
-
-func (r *NoteRepoMem) Create(n core.Note) (int64, error) {
-  r.mu.Lock(); defer r.mu.Unlock()
-  r.next++
-  n.ID = r.next
-  r.notes[n.ID] = &n
-  return n.ID, nil
-}
-```
-
-**internal/http/handlers/notes.go**
-```
-package handlers
-
-
-import (
-  "encoding/json"
-  "net/http"
-  "example.com/notes-api/internal/core"
-  "example.com/notes-api/internal/repo"
-)
-type Handler struct {
-  Repo *repo.NoteRepoMem
-}
-func (h *Handler) CreateNote(w http.ResponseWriter, r *http.Request) {
-  var n core.Note
-  if err := json.NewDecoder(r.Body).Decode(&n); err != nil {
-    http.Error(w, "Invalid input", http.StatusBadRequest)
-    return
-  }
-  id, _ := h.Repo.Create(n)
-  n.ID = id
-  w.Header().Set("Content-Type", "application/json")
-  w.WriteHeader(http.StatusCreated)
-  json.NewEncoder(w).Encode(n)
-}
-```
-**cmd/api/main.go**
-```
-package main
-
-
-import (
-  "log"
-  "net/http"
-  "example.com/notes-api/internal/http"
-  "example.com/notes-api/internal/http/handlers"
-  "example.com/notes-api/internal/repo"
-)
-
-
-func main() {
-  repo := repo.NewNoteRepoMem()
-  h := &handlers.Handler{Repo: repo}
-  r := httpx.NewRouter(h)
-
-
-  log.Println("Server started at :8080")
-  log.Fatal(http.ListenAndServe(":8080", r))
-}
-```
 
 ### Запуск проекта
+
 ```
+cd go_practics
+docker-compose up -d
+export DATABASE_URL="postgresql://user:pass@localhost:5432/notes?sslmode=disable"
 go run ./cmd/api
 ```
-![screen1](image.png)
+
+
+### Создание таблицы в БД
+```
+CREATE TABLE IF NOT EXISTS notes (
+  id BIGSERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Частичный индекс для поиска по заголовку, если часто ищем по prefix
+CREATE INDEX IF NOT EXISTS idx_notes_title_gin
+  ON notes USING GIN (to_tsvector('simple', title));
+
+-- Индекс для keyset-пагинации
+CREATE INDEX IF NOT EXISTS idx_notes_created_id ON notes (created_at, id);
+```
+![screen_new](./screens/image.png)
 
 ### Создание заметки
 ```
-curl -X POST http://localhost:8080/api/v1/notes \
--H "Content-Type: application/json" \
--d '{"title":"Первая заметка", "content":"Это тест"}'
+curl -v -X POST http://localhost:8080/notes \                    
+  -H 'Content-Type: application/json' \
+  -d '{"title":"facing the truth","content":"..."}'
 ```
-![screen2](image-2.png)
+![screen2](./screens/image%20copy.png)
+
+### Получение заметки по айди
+```
+curl -s http://localhost:8080/notes/4       
+```
+![screen_3](./screens/Screenshot%202025-12-12%20at%209.37.37 PM.png)
+
+### Keyset пагинация
+![screen5](./screens/image3.png)
+
+### Обновление заметки
+```
+curl -s -X PATCH http://localhost:8080/notes/1 \          
+  -H 'Content-Type: application/json' \
+  -d '{"title":"postgres knowledge","content":"updated"}'
+```
+![another](./screens/image4.png)
+
+### Используем batch
+```
+curl -s "http://localhost:8080/notes/batch?ids=1,2,3,4"
+```
+![screen45](./screens/image5.png)
+
+### Прогон нагрузки hey
+**Пагинация**
+![screen23](./screens/image6.png)
+
+**Получение по id**
+![id_no_batch](./screens/image7.png)
+![id_batch](./screens/image8.png)
+
+### ДО Оптимизации:
+
+1. Пагинация через OFFSET. При использовании OFFSET для пагинации время выполнения запросов росло почти линейно с номером страницы. Чем дальше страница, тем больше строк базе приходилось просканировать.
+2. N+1 проблема при получении по ID. При получении списка заметок по ID выполнялось N+1 запросов: один запрос для получения списка ID, затем N отдельных запросов для получения каждой заметки.
+3. Неэффективный поиск по title. Поиск по title был реализован через LIKE или неправильное использование полнотекстового поиска. Когда запрос не был написан в точности под выражение индекса, PostgreSQL не мог использовать GIN индекс и уходил в Seq Scan.
+
+### Что изменили:
+
+1. Заменили OFFSET-пагинации на Keyset-пагинацию
+Реализована keyset-пагинация (или пагинация по ключу) на основе составного поля (created_at, id). Это позволяет базе данных продолжать чтение «с места» последнего полученного результата, используя эффективный поиск по индексу, вместо полного пересчета смещения.
+2. Устранили проблему N+1
+Запросы N+1 были заменены на один пакетный (batch) запрос, который загружает все необходимые данные по массиву идентификаторов с использованием оператора ANY().
+
 
 ### Ответы на контрольные вопросы
 
-**Что означает аббревиатура REST и в чём её суть?**
+1. Чем keyset-пагинация лучше OFFSET/LIMIT на больших объемах
 
-Аббревиатура: REST расшифровывается как REpresentational State Transfer (Передача репрезентативного состояния).
-Суть: Это архитектурный стиль для создания распределённых систем, таких как веб-сервисы. Суть REST заключается в том, что взаимодействие между клиентом и сервером происходит вокруг ресурсов (например, notes, users). Клиент взаимодействует с ресурсом, используя стандартные методы HTTP, и получает его представление (обычно в формате JSON или XML), после чего переходит в новое состояние.
-Как связаны CRUD-операции и методы HTTP? CRUD-операции напрямую сопоставляются с HTTP-методами: Create → `POST`, Read → `GET`, Update → `PUT` / `PATCH`, Delete → `DELETE`.
+Keyset-пагинация использует условие WHERE для фильтрации строк, которые были получены на предыдущей странице, например WHERE created_at <= last_value AND id < last_id. Это позволяет базе данных использовать индекс для эффективного поиска начальной точки и чтения только нужного блока строк. OFFSET/LIMIT заставляет базу данных считать и пропускать все строки до начала нужной страницы, что на глубоких страницах приводит к существенному замедлению и росту нагрузки. Keyset-пагинация обеспечивает постоянную скорость независимо от глубины выборки.
 
-**Для чего нужна слоистая архитектура (handler → service → repository)?**
+2. Когда нужен покрывающий индекс и чем он отличается от обычного
 
-Она нужна для разделения ответственности, что упрощает тестирование и повышает гибкость и поддерживаемость кода.
+Покрывающий индекс содержит в себе все поля, необходимые для выполнения запроса, включая те, которые используются в SELECT, JOIN, WHERE и ORDER BY. Обычный индекс обычно включает только поля для фильтрации и сортировки, но для получения остальных данных требуется обращение к основной таблице. Покрывающий индекс позволяет выполнить запрос, обращаясь только к индексу, что исключает дополнительные чтения таблицы. Он нужен для ускорения часто выполняемых запросов, где критически важна скорость.
 
-**Что означает принцип «stateless» в REST API?**
+3. Какие параметры пула подключений в Go вы настраиваете и почему
 
- Stateless (без состояния) означает, что сервер не хранит информацию о сессии клиента между запросами. Каждый запрос должен содержать всю необходимую информацию для своей полной обработки.
+MaxOpenConns максимальное количество открытых подключений к базе данных. Устанавливается для ограничения нагрузки на БД и避免 исчерпания ресурсов. MaxIdleConns максимальное количество простаивающих подключений в пуле. Позволяет держать готовые подключения для быстрого выполнения запросов без накладных расходов на установку. ConnMaxLifetime максимальное время жизни подключения. Помогает ротации подключений, чтобы избежать использования устаревших или проблемных соединений. Настройки зависят от нагрузки и возможностей базы данных.
 
-**Почему важно использовать стандартные коды ответов HTTP?**
+4. Что показывает EXPLAIN ANALYZE BUFFERS и как отличить Seq Scan от Index Scan
 
- Стандартные коды (2xx, 4xx, 5xx) обеспечивают единообразие и предсказуемость. Клиент может однозначно определить результат: успех (2xx), ошибка клиента (4xx) или ошибка сервера (5xx).
+EXPLAIN ANALYZE показывает фактический план выполнения запроса включая затраченное время. BUFFERS добавляет информацию об использовании кэша сколько блоков было считано с диска и из кэша. Seq Scan последовательное чтение всей таблицы. Index Scan сканирование индекса для выбора строк с последующим обращением к таблице за остальными данными. Seq Scan обычно применяется при чтении большой доли таблицы, Index Scan при выборе небольшой доли строк с использованием индекса.
 
-**Как можно добавить аутентификацию в REST API?**
+5. Как устранить N 1 запросов Приведите 2 способа
 
- Наиболее популярный способ — использование Bearer Токенов (часто JSON Web Tokens, JWT). Токен передаётся в заголовке `Authorization: Bearer `.
+Первый способ замена нескольких запросов на один батч запрос с использованием оператора IN или ANY для загрузки всех связанных данных по массиву идентификаторов. Второй способ использование JOIN в основном запросе для сразу получения всех нужных данных за один обращение к базе.
 
-**В чём преимущество версионирования API (например, `/api/v1/`)?**
+6. Когда уместны prepared statements и какие плюсы они дают
 
- Версионирование позволяет развивать API и вносить несовместимые изменения (в новой версии, `/v2/`) без нарушения работы старых клиентов, которые продолжают использовать предыдущую версию (`/v1/`).
+Prepared statements уместны при многократном выполнении однотипных запросов с разными параметрами. Плюсы повышение производительности за счет того что план запроса компилируется один раз, безопасность от SQL инъекций так как параметры передаются отдельно от текста запроса, уменьшение сетевых издержек при повторных вызовах.
+
+7. Как выбрать правильный размер пула для сервиса и БД Какие метрики смотреть
+
+Размер пула должен быть достаточным для обработки пиковой нагрузки но не превышать возможности базы данных. Следует смотреть метрики активные подключения к БД, время ожидания подключения из пула, утилизация CPU и памяти на сервере БД, количество ошибок таймаутов. Оптимальный размер часто находится эмпирически начинают с небольшого пула и увеличивают под нагрузкой пока не перестают расти производительность и не появляются признаки конкуренции за ресурсы.
