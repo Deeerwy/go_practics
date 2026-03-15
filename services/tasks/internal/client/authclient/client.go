@@ -2,13 +2,14 @@ package authclient
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
-	"time"
+	"log"
 
-	"tech-ip-sem2/shared/httpx"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	"tech-ip-sem2/proto/authpb"
 )
 
 var (
@@ -17,58 +18,52 @@ var (
 )
 
 type Client struct {
-	baseURL string
-	http    *http.Client
+	cc     *grpc.ClientConn
+	client authpb.AuthServiceClient
 }
 
-type verifyResponse struct {
-	Valid bool   `json:"valid"`
-	Error string `json:"error"`
-}
-
-func New(baseURL string, timeout time.Duration) *Client {
+func New(cc *grpc.ClientConn) *Client {
 	return &Client{
-		baseURL: baseURL,
-		http:    httpx.NewClient(timeout),
+		cc:     cc,
+		client: authpb.NewAuthServiceClient(cc),
 	}
 }
 
-// Verify calls Auth /v1/auth/verify with the provided Authorization header.
+// Verify вызывает gRPC-метод AuthService.Verify.
 func (c *Client) Verify(ctx context.Context, authorization string) error {
+	// В ПЗ токен передаётся в Authorization, здесь ожидаем "Bearer <token>".
 	if authorization == "" {
 		return ErrUnauthorized
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/auth/verify", nil)
-	if err != nil {
-		return fmt.Errorf("build request: %w", err)
+	const prefix = "Bearer "
+	token := authorization
+	if len(authorization) > len(prefix) && authorization[:len(prefix)] == prefix {
+		token = authorization[len(prefix):]
 	}
-	req.Header.Set("Authorization", authorization)
-	httpx.WithRequestID(ctx, req)
 
-	resp, err := c.http.Do(req)
+	log.Println("calling grpc verify")
+
+	resp, err := c.client.Verify(ctx, &authpb.VerifyRequest{Token: token})
 	if err != nil {
-		return fmt.Errorf("auth request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var vr verifyResponse
-		_ = json.NewDecoder(resp.Body).Decode(&vr)
-		if !vr.Valid {
+		st, ok := status.FromError(err)
+		if !ok {
+			return err
+		}
+		switch st.Code() {
+		case codes.Unauthenticated:
 			return ErrUnauthorized
+		case codes.PermissionDenied:
+			return ErrForbidden
+		default:
+			return err
 		}
-		return nil
-	case http.StatusUnauthorized:
-		return ErrUnauthorized
-	case http.StatusForbidden:
-		return ErrForbidden
-	default:
-		if resp.StatusCode >= 500 {
-			return fmt.Errorf("auth server error: %d", resp.StatusCode)
-		}
-		return fmt.Errorf("unexpected status from auth: %d", resp.StatusCode)
 	}
+
+	if !resp.Valid {
+		return ErrUnauthorized
+	}
+	return nil
 }
+
 

@@ -47,19 +47,21 @@ func (h *Handler) Router() http.Handler {
 // withAuth wraps handler with auth verification via Auth service.
 func (h *Handler) withAuth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()
 
 		authHeader := r.Header.Get("Authorization")
 		if err := h.authClient.Verify(ctx, authHeader); err != nil {
-			switch {
-			case errors.Is(err, authclient.ErrUnauthorized):
+			if errors.Is(err, authclient.ErrUnauthorized) {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
-			case errors.Is(err, authclient.ErrForbidden):
-				http.Error(w, "forbidden", http.StatusForbidden)
-			default:
-				http.Error(w, "auth service error", http.StatusInternalServerError)
+				return
 			}
+			if errors.Is(err, authclient.ErrForbidden) {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			// Auth недоступен / внутренняя ошибка gRPC → 503.
+			http.Error(w, "auth service unavailable", http.StatusServiceUnavailable)
 			return
 		}
 

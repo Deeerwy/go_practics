@@ -1,62 +1,159 @@
-Практическое занятие №1 — разделение монолита на 2 микросервиса (Auth и Tasks) с взаимодействием по HTTP.
+Практические занятия №2 — замена проверки доступа с HTTP на gRPC.
 
-Структура проекта описана в `docs/pz17_api.md`. Запуск сервисов:
+Проект на Go 1.22, использует HTTP/REST, gRPC, env‑конфигурацию, таймауты, request‑id и базовое логирование.
 
-- Auth service: `go run ./services/auth/cmd/auth`
-- Tasks service: `go run ./services/tasks/cmd/tasks`
+---
 
-Требуются Go 1.22+ и заданы переменные окружения:
+### Структура репозитория
 
-- `AUTH_PORT` (по умолчанию `8081`)
-- `TASKS_PORT` (по умолчанию `8082`)
-- `AUTH_BASE_URL` (по умолчанию `http://localhost:8081`)
-
-## Скриншоты:
-
-**Запуск auth:**
-  ![auth_load](<./screens/Screenshot 2026-03-15 at 4.19.13 PM.png>)
-**Запуск tasks:**
-  ![alt text](<./screens/Screenshot 2026-03-15 at 4.19.57 PM.png>)
-
-**Тестирование через curl (готовые примеры)**
-**Получить токен**
 ```
-curl -s -X POST http://localhost:8081/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -H "X-Request-ID: req-001" \
-  -d '{"username":"student","password":"student"}'
-Ожидаемо: access_token.
+tech-ip-sem2/
+  services/
+    auth/
+      cmd/auth/main.go
+      internal/
+        http/...
+        grpc/...
+        service/...
+    tasks/
+      cmd/tasks/main.go
+      internal/
+        http/...
+        service/...
+        client/authclient/...
+  shared/
+    middleware/
+      requestid.go
+      logging.go
+    httpx/
+      client.go
+  proto/
+    auth.proto
+    authpb/
+      auth.pb.go
+      auth_grpc.pb.go
+  docs/
+    pz17_api.md
+  README.md
 ```
-![access_token](<./screens/Screenshot 2026-03-15 at 4.23.36 PM.png>)
-**Создать задачу через Tasks (с проверкой Auth)**
+
+---
+
+### Границы сервисов
+
+- **Auth service**
+  - Выдаёт “учебный” токен через HTTP `POST /v1/auth/login`.
+  - Проверяет токен:
+    - ПЗ1: HTTP `GET /v1/auth/verify`.
+    - ПЗ2: gRPC метод `AuthService.Verify`.
+  - Возвращает: валиден/не валиден и `subject`.
+
+- **Tasks service**
+  - CRUD задач (in‑memory `map[id]Task`).
+  - Перед каждой операцией проверяет токен через Auth:
+    - ПЗ1: HTTP‑запрос к `GET /v1/auth/verify`.
+    - ПЗ2: gRPC‑вызов `AuthService.Verify`.
+
+---
+
+### Переменные окружения
+
+- `AUTH_PORT` — порт HTTP Auth (по умолчанию `8081`).
+- `TASKS_PORT` — порт HTTP Tasks (по умолчанию `8082`).
+- `AUTH_BASE_URL` — базовый URL Auth для HTTP‑клиента Tasks (используется в ПЗ1, по умолчанию `http://localhost:8081`).
+- `AUTH_GRPC_PORT` — порт gRPC‑сервера Auth (ПЗ2, по умолчанию `50051`).
+- `AUTH_GRPC_ADDR` — адрес gRPC для Tasks (ПЗ2, по умолчанию `localhost:50051`).
+
+---
+
+
+### ПЗ2: gRPC‑проверка Verify
+
+#### .proto и генерация
+
+**Файл контракта:** `proto/auth.proto`
+
+Содержит:
+
+- сервис `AuthService` с методом `Verify(VerifyRequest) returns (VerifyResponse)`;
+- `VerifyRequest` с полем `token`;
+- `VerifyResponse` с полями `valid`, `subject`;
+- опцию `go_package = "tech-ip-sem2/proto/authpb;authpb"`.
+
+**Команда генерации (из корня проекта):**
+
+```bash
+cd tech-ip-sem2
+
+protoc \
+  --go_out=. --go_opt=paths=source_relative \
+  --go-grpc_out=. --go-grpc_opt=paths=source_relative \
+  proto/auth.proto
 ```
-curl -i -X POST http://localhost:8082/v1/tasks \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer demo-token" \
-  -H "X-Request-ID: req-003" \
-  -d '{"title":"Do PZ17","description":"split services","due_date":"2026-01-10"}'
-  ```
-![task_via_access](<./screens/Screenshot 2026-03-15 at 4.24.21 PM.png>)
 
-**Попробовать без токена (должно быть 401)**
+Сгенерированные файлы (`auth.pb.go`, `auth_grpc.pb.go`) располагаются в `proto/authpb/` и используются как пакет `tech-ip-sem2/proto/authpb`.
+
+#### Запуск сервисов с gRPC Verify
+
+1. Auth (HTTP + gRPC):
+
+```bash
+cd services/auth
+export AUTH_PORT=8081
+export AUTH_GRPC_PORT=50051
+go run ./cmd/auth
 ```
-curl -i http://localhost:8082/v1/tasks \
-  -H "X-Request-ID: req-004"
+
+2. Tasks (HTTP API + gRPC‑клиент):
+
+```bash
+cd services/tasks
+export TASKS_PORT=8082
+export AUTH_GRPC_ADDR=localhost:50051
+go run ./cmd/tasks
 ```
-![no_auth_denied](<./screens/Screenshot 2026-03-15 at 4.25.17 PM.png>)
 
-## Контрольные вопросы
+#### Сценарий проверки
 
-1. **Почему межсервисный вызов должен иметь таймаут?**  
-   Без таймаута зависший или медленный соседний сервис может “подвесить” все входящие запросы к вызывающему сервису, занять пул соединений и ресурсы, что приводит к каскадным отказам. Таймаут ограничивает ожидание ответа и позволяет сервису вовремя вернуть ошибку клиенту и освободить ресурсы.
+1. Получить токен через HTTP `POST /v1/auth/login` (как в ПЗ1).  
+2. Сделать HTTP‑запрос к Tasks с заголовком `Authorization: Bearer <token>`.  
+3. В логах Tasks увидеть запись `calling grpc verify` и успешное выполнение запроса.  
+4. Остановить Auth и повторить запрос к Tasks — получим `503 Service Unavailable`, при этом запрос не “зависает”.
 
-2. **Чем request-id помогает при диагностике ошибок?**  
-   Request-id даёт уникальный идентификатор запроса, который прокидывается через все сервисы. По нему можно быстро собрать цепочку логов из разных сервисов и понять, где именно возникла проблема, даже при большом объёме логирования и параллельных запросах.
+#### Маппинг ошибок
 
-3. **Какие статусы нужно вернуть клиенту при невалидном токене?**  
-   При невалидном или отсутствующем токене обычно возвращают `401 Unauthorized` (клиент не аутентифицирован). Если токен валиден, но у пользователя нет прав на операцию, возвращают `403 Forbidden`. В учебном задании достаточно использовать `401` для случаев, когда Auth сообщает о невалидном токене.
+- На стороне Auth (gRPC):
+  - невалидный/отсутствующий токен → статус gRPC `Unauthenticated`;
+  - внутренние ошибки → `Internal`.
 
-4. **Чем опасно “делить одну БД” между сервисами?**  
-   Общая база данных размывает границы ответственности сервисов, усложняет эволюцию схемы (любое изменение бьёт по всем), делает невозможной независимую разработку и деплой. Кроме того, один “шумный” сервис может деградировать общую БД и повлиять на остальные, а также нарушаются инварианты и инкапсуляция доменной логики.
+- На стороне Tasks (HTTP API):
+  - `Unauthenticated` → HTTP `401 Unauthorized`;
+  - `PermissionDenied` (если бы использовался) → HTTP `403 Forbidden`;
+  - сетевые ошибки, таймауты, `Internal`, `Unavailable` для Auth → HTTP `503 Service Unavailable`;
+  - задача не найдена → `404 Not Found`;
+  - некорректное тело запроса → `400 Bad Request`.
 
+Пример логов (успех):
+
+![success_call](<./screens/Screenshot 2026-03-15 at 6.06.51 PM.png>)
+
+Auth недоступен:
+
+![auth_closed](<./screens/Screenshot 2026-03-15 at 6.07.52 PM.png>)
+
+
+
+### Контрольные вопросы 
+
+1. **Что такое .proto и почему он считается контрактом?**  
+   `.proto` — это декларативное описание сообщений и сервисов (RPC‑методов) в Protocol Buffers. На его основе для разных языков генерируется код клиента и сервера, поэтому именно `.proto` определяет формат данных и интерфейс взаимодействия между сервисами — то есть является формальным “контрактом”.
+
+2. **Что такое deadline в gRPC и чем он полезен?**  
+   Deadline — это момент времени, после которого RPC‑вызов должен быть отменён. Клиент передаёт дедлайн на сервер, и оба понимают, сколько максимально можно ждать: это защищает от “висящих” запросов, освобождает ресурсы и делает поведение распределённой системы более предсказуемым.
+
+3. **Почему “exactly-once” не даётся просто так даже в RPC?**  
+   Из‑за сбоев сети, потерь ответов и возможных перезапусков ни клиент, ни сервер не могут гарантировать, что операция выполнится ровно один раз: клиент может не получить ответ и повторить запрос, а исходный уже был выполнен. Для приближения к “exactly-once” нужны идемпотентные операции, уникальные идентификаторы запросов и дополнительное хранение состояния на стороне сервера.
+
+4. **Как обеспечивать совместимость при расширении .proto?**  
+   Нельзя переиспользовать и удалять уже занятые номера полей. Новые поля добавляются с новыми номерами и как опциональные. Старые клиенты будут игнорировать незнакомые поля, а новые — корректно работать и с обновлёнными, и со старыми сообщениями, обеспечивая обратную и частично прямую совместимость.
 
