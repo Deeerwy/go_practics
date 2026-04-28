@@ -1,10 +1,11 @@
 name: CI Pipeline
 
+
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "pz8_part2" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "main", "master", "pz8_part2" ]
 
 jobs:
   test-and-build:
