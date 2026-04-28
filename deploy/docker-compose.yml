@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+  tasks:
+    build:
+      context: ../services/tasks
+    container_name: tasks_service
+    ports:
+      - "8082:8082"
+    environment:
+      TASKS_PORT: "8082"
