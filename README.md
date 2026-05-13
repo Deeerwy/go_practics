@@ -73,7 +73,7 @@ cd deploy/redis
 docker compose up -d
 docker compose ps
 ```
-![1](image.png)
+![1](./screens/image.png)
 
 ### 2. Инициализация модуля 
 
@@ -103,8 +103,8 @@ curl http://localhost:8082/v1/tasks/1
 # Второй запрос — cache hit, данные из Redis
 curl http://localhost:8082/v1/tasks/1
 ```
-![2](image-1.png)
-![3](image-2.png)
+![2](./screens/image-1.png)
+![3](./screens/image-2.png)
 
 ### Валидация при обновлении
 
@@ -116,7 +116,7 @@ curl -X PATCH http://localhost:8082/v1/tasks/1 \
 # Следующий GET снова даст cache miss и обновит кэш
 curl http://localhost:8082/v1/tasks/1
 ```
-![4](image-3.png)
+![4](./screens/image-3.png)
 
 ### Валидация при удалении
 
@@ -126,7 +126,7 @@ curl -X DELETE http://localhost:8082/v1/tasks/1
 # Ожидаемый результат — 404 Not Found
 curl http://localhost:8082/v1/tasks/1
 ```
-![5](image-4.png)
+![5](./screens/image-4.png)
 
 ### Деградация при недоступности Redis
 
@@ -141,7 +141,7 @@ curl http://localhost:8082/v1/tasks/2
 
 Ожидаемое поведение: сервис не падает, данные возвращаются из репозитория,
 в логах появляется предупреждение об ошибке Redis.
-![6](image-5.png)
+![6](./screens/image-5.png)
 
 
 ## Исходный код
