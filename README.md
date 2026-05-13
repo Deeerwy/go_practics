@@ -200,14 +200,14 @@ services:
 cd deploy/lb
 docker compose up -d --build
 ```
-![1](image.png)
+![1](./screens/image.png)
 
 Проверка состояния контейнеров:
 
 ```bash
 docker compose ps
 ```
-![2](image-1.png)
+![2](./screens/image-1.png)
 
 
 ## Шаг 7. Проверка health endpoint
@@ -215,7 +215,7 @@ docker compose ps
 ```bash
 curl -i http://localhost:8080/health
 ```
-![3](image-2.png)
+![3](./screens/image-2.png)
 Примечание: При повторных запросах значение `X-Instance-ID` будет меняться между репликами.
 
 
@@ -228,7 +228,7 @@ for i in {1..10}; do
   curl -s -I http://localhost:8080/v1/tasks | grep X-Instance-ID
 done
 ```
-![4](image-3.png)
+![4](./screens/image-3.png)
 
 
 ## Шаг 9. Проверка передачи заголовков через NGINX
@@ -236,7 +236,7 @@ done
 ```bash
 curl -i http://localhost:8080/v1/tasks -H "Authorization: Bearer demo-token"
 ```
-![5](image-4.png)
+![5](./screens/image-4.png)
 
 
 ## Шаг 10. Проверка отказоустойчивости
@@ -254,7 +254,7 @@ for i in {1..5}; do
   curl -s -I http://localhost:8080/v1/tasks | grep X-Instance-ID
 done
 ```
-![6](image-5.png)
+![6](./screens/image-5.png)
 
 
 ## Шаг 11. Возврат реплики в работу
@@ -262,7 +262,7 @@ done
 ```bash
 docker compose start tasks_1
 ```
-![7](image-6.png)
+![7](./screens/image-6.png)
 После старта балансировка снова распределяется между всеми репликами.
 
 
@@ -274,7 +274,7 @@ docker compose start tasks_1
 В `nginx.conf` в блок `upstream tasks_backend` добавлена строка `server tasks_3:8082`.
 
 После перезапуска стенда:
-![8](image-7.png)
+![8](./screens/image-7.png)
 
 
 ## Ответы на контрольные вопросы
