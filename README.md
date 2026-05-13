@@ -12,7 +12,7 @@
 
 ## Структура проекта
 
-```
+
 pz9-redis-cache/
 ├── cmd/
 │   └── server/
@@ -35,7 +35,7 @@ pz9-redis-cache/
 │   └── redis/
 │       └── docker-compose.yml
 └── go.mod
-```
+
 
 
 
